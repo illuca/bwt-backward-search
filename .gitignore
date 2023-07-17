@@ -6,8 +6,4 @@
 /files/large2.rlb
 /files/large2.txt
 /cmake-build-debug/
-/.idea/misc.xml
-/.idea/modules.xml
-/.idea/vcs.xml
-/.idea/bwt-backward-search.iml
-/.idea/.name
+/.idea/
