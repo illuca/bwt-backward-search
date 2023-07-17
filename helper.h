@@ -14,8 +14,8 @@ void printCTable(map<char, int> &cTable);
 
 void printOccTable(vector<map<char, int>> &occTable);
 
-int Occ(int i, char c);
+//void buildOccTable(vector<map<char, int>> &occTable, const string &bwt, map<char, int> &counter, set<char> &letters);
 
-void buildOccTable();
+//void buildCTable();
 
-void buildCTable();
+void buildTables(const string& bwt, map<char, int>& cTable, vector<map<char, int>>& occTable);

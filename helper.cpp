@@ -9,52 +9,24 @@
 
 using namespace std;
 
-extern set<char> letters;
-extern vector<map<char, int>> occTable;
-extern map<char, int> cTable;
-extern string bwt;
-extern int recordNum;
-
-int Occ(int i, char c) {
-    return occTable[i][c];
-}
-
-
-void buildOccTable() {
-    //occTable has the same size of bwt code
-    //but for large file, we need gap
-    occTable.resize(bwt.size());
-    //for each character, we count its occurrence at any position
-    map<char, int> count;
-    for (int i = 0; i < bwt.size(); i++) {
-        for (auto c: letters) {
-            if (!count.count(c)) {
-                count[c] = 0;
-            }
-        }
-        char c = bwt[i];
-        count[c]++;
-        occTable[i] = count;
-    }
-}
-
-void buildCTable() {
-    map<char, int> count;
-    for (int i = 0; i < bwt.size(); i++) {
-        //build cTable
-        char c = bwt[i];
-        count[c]++;
-        if(c=='['){
-            recordNum++;
+void buildTables(const string &bwt, map<char, int> &cTable, vector<map<char, int>> &occTable) {
+    map<char, int> occCounter;
+    for (char c: bwt) {
+        // Update occCounter
+        occCounter[c]++;
+        // Update occTable
+        occTable.push_back(occCounter);
+        // Update cTable
+        if (cTable.find(c) == cTable.end()) {
+            cTable[c] = 0;
         }
     }
+    // Calculate cumulative counts for cTable
     int total = 0;
-    for (auto it: count) {
-        //value of current key = total sum of values up to previous key
-        char c = it.first;
+    for (auto &[c, count]: cTable) {
+        int oldCount = count;
         cTable[c] = total;
-        total += it.second;
-        letters.insert(c);
+        total += oldCount;
     }
 }
 
@@ -68,17 +40,19 @@ void printCTable(map<char, int> &cTable) {
 
 void printOccTable(vector<map<char, int>> &occTable) {
     cout << "----occTable-----\n";
-    for (auto c: letters) {
-        cout << "\t" << c;
+    int n = occTable.size();
+    for (auto it: occTable[n - 1]) {
+        cout << "\t" << it.first;
     }
+
     cout << endl;
     for (int i = 0; i < occTable.size(); i++) {
         cout << i << "\t";
-        for (auto pair: occTable[i]) {
-            if (pair.second != 0) {
-                cout << "\033[31m" << pair.second << "\033[0m" << "\t";
+        for(auto it: occTable[n-1]) {
+            if(occTable[i].count(it.first)) {
+                cout << "\033[31m" << occTable[i][it.first] << "\033[0m" << "\t";
             } else {
-                cout << pair.second << "\t";
+                cout << occTable[i][it.first] << "\t";
             }
         }
         cout << endl;
