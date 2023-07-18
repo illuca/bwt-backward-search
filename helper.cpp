@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <map>
 #include <vector>
+#include <fstream>
 #include <set>
 
 using namespace std;
@@ -48,8 +49,8 @@ void printOccTable(vector<map<char, int>> &occTable) {
     cout << endl;
     for (int i = 0; i < occTable.size(); i++) {
         cout << i << "\t";
-        for(auto it: occTable[n-1]) {
-            if(occTable[i].count(it.first)) {
+        for (auto it: occTable[n - 1]) {
+            if (occTable[i].count(it.first)) {
                 cout << "\033[31m" << occTable[i][it.first] << "\033[0m" << "\t";
             } else {
                 cout << occTable[i][it.first] << "\t";
@@ -59,5 +60,8 @@ void printOccTable(vector<map<char, int>> &occTable) {
     }
     cout << endl;
 }
+
+
+
 
 

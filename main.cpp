@@ -1,8 +1,13 @@
 #include <iostream>
 #include <cstdio>
 #include <map>
+#include <fstream>
+#include <queue>
+#include <bitset>
+
 #include <vector>
 #include <set>
+#include <chrono>
 #include "helper.h"
 
 using namespace std;
@@ -24,8 +29,10 @@ map<char, int> cTable;
 int recordNum;
 int N = 0;
 int byteIndex;
+ofstream fout;
 char* filename;
 map<int, int> mPosition;
+set<int> visited;
 
 int C(char c) {
     if (cTable.count(c) == 0) {
@@ -60,11 +67,17 @@ pair<int, int> backwardSearch(string &p) {
     return {start, end};
 }
 
-void reverseBWT(int &position, set<int> &ids) {
-    int i = position;
+void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string> &result) {
+    int i = start;
     int lb, rb;
     string record;
+    if (visited.count(i)) {
+        return;
+    }
     while (true) {
+        if (start <= i && i <= end) {
+            visited.insert(i);
+        }
         char c = bwt(i);
         record = c + record;
         if (c == ']') {
@@ -88,25 +101,28 @@ void reverseBWT(int &position, set<int> &ids) {
     //find the next record id
     int nextId = currId + 1;
     string nextIdentifier = "[" + to_string(nextId) + "]";
-    pair<int, int> res = backwardSearch(nextIdentifier);
+    pair<int, int> range = backwardSearch(nextIdentifier);
     string half;
-    if (res.first == -1) {
+    if (range.first == -1) {
         //it is the last record
         int firstId = currId - recordNum + 1;
         string firstIdentifier = "[" + to_string(firstId) + "]";
         //find the first record
-        res = backwardSearch(firstIdentifier);
+        range = backwardSearch(firstIdentifier);
     }
-    i = res.first;
+    i = range.first;
     while (true) {
+        if (start <= i && i <= end) {
+            visited.insert(i);
+        }
         half = bwt(i) + half;
         i = LF(i, bwt(i));
-        if (i == position) {
+        if (i == start) {
             break;
         }
     }
     record = record + half;
-    cout << record << endl;
+    result[currId] = record;
 }
 
 void buildOccTable(string str, map<char, int> &counter) {
@@ -116,6 +132,10 @@ void buildOccTable(string str, map<char, int> &counter) {
         }
         counter[str[i]]++;
         occTable.push_back(counter);
+        if(N==4934) {
+            cout << "he";
+        }
+        N++;
 //        occTable.push_back(counter);
         mPosition[N + i] = byteIndex;
     }
@@ -124,10 +144,11 @@ void buildOccTable(string str, map<char, int> &counter) {
 char bwt(int index) {
     //if after mapping, what we read from the file is a number, then backward util we find the character
     int ithByte = mPosition[index];
-    int num = 3;
+    //the max needs 4 bytes
+    int num = 5;
     // 1st byte is 0
-    if (ithByte >= 2) {
-        fseek(fd, ithByte - 2, SEEK_SET);
+    if (ithByte >= 4) {
+        fseek(fd, ithByte - 4, SEEK_SET);
     } else {
         fseek(fd, 0, SEEK_SET);
         num = ithByte + 1;
@@ -147,37 +168,62 @@ char bwt(int index) {
     return '#';
 }
 
-FILE* openRLB() {
-    return fopen(filename, "r");
+void handleString(vector<unsigned char> &chars, map<char, int> &counter) {
+    bitset<28> b;
+    string res;
+    if (chars.size()==0) {
+        return;
+    }
+    if(chars.size()==1) {
+        res = string(1, chars[0]);
+    }
+    if (chars.size() >= 2) {
+        unsigned char c = chars[0];
+        // For each byte, extract the least significant 7 bits and append them to our bitset
+
+        for (int i = 1; i < chars.size(); ++i) {
+            unsigned char byte = chars[i];
+            for (int j = 0; j < 7; ++j) {
+                b[(i - 1) * 7 + j] = (byte >> j) & 1;
+            }
+        }
+        unsigned int len = b.to_ulong();
+        res = string(len + 3, c);
+    }
+    string output = filename;
+    fout << res;
+
+    buildOccTable(res, counter);
+    byteIndex += chars.size();
 }
 
 void readBWT(map<char, int> &counter) {
     const size_t bufferSize = 1024;
     vector<unsigned char> buffer(bufferSize);
-    unsigned char curr, prev;
-    string bwt;
+    char curr, prev;
 
+    //TODO 可能需要提前分配内存效率更高
+    vector<unsigned char> chars;
+
+    string str;
+    int totalBytesRead = 0;
     while (size_t bytesRead = fread(buffer.data(), 1, bufferSize, fd)) {
         for (size_t i = 0; i < bytesRead; ++i) {
+            totalBytesRead++;
+            if(totalBytesRead==4934) {
+                cout << "ss";
+            }
             curr = buffer[i];
-            if (isNum(curr)) {
-                int len = (curr & 0b01111111) + 3;
-                bwt += string(len - 1, prev);
-                string tmp = string(len - 1, prev);
-                buildOccTable(tmp, counter);
-                N += len - 1;
-                byteIndex++;
-            } else {
-                bwt += curr;
-                string tmp = string(1, curr);
-                buildOccTable(tmp, counter);
-                N += 1;
-                byteIndex++;
-                prev = curr;
+            if (isChar(curr)) {
+                handleString(chars, counter);
+                chars.clear();
+                chars.push_back(curr);
+            }else {
+                chars.push_back(curr);
             }
         }
     }
-    cout << "bwt: " << bwt << "\n";
+    handleString(chars, counter);
 }
 
 int Occ(int i, char c) {
@@ -194,7 +240,57 @@ void buildCTable(const map<char, int> &counter) {
     }
 }
 
+void outputCounter(map<char, int> &counter, string filename) {
+    ofstream file(filename + "-counter");
+
+    file << "----cTable----\n";
+    for (const auto &pair: counter) {
+        file << pair.first << ": " << pair.second << endl;
+    }
+
+    file.close();  // closing the file after writing to it
+}
+
+void outputCTable(map<char, int> &cTable, string filename) {
+    ofstream file(filename + "-c");
+
+    file << "----cTable----\n";
+    for (const auto &pair: cTable) {
+        file << pair.first << ": " << pair.second << endl;
+    }
+
+    file.close();  // closing the file after writing to it
+}
+
+void outputOccTable(vector<map<char, int>> &occTable, string filename) {
+    ofstream file(filename + "-occ");
+    file << "----occTable-----\n";
+    int n = occTable.size();
+    file << setw(8) << "\\";
+    for (auto it: occTable[n - 1]) {
+        file << setw(5) << it.first;
+    }
+    file << endl;
+    for (int i = 0; i < occTable.size(); i++) {
+        file << setw(8) << i;
+        for (auto it: occTable[n - 1]) {
+            if (occTable[i].count(it.first)) {
+                file << setw(5) << occTable[i][it.first];
+            } else {
+                file << setw(5) << occTable[i][it.first];
+            }
+        }
+        file << '\n';
+    }
+    file << setw(8) << "\\";
+    for (auto it: occTable[n - 1]) {
+        file << setw(5) << it.first;
+    }
+    file.close();
+}
+
 int main(int argc, char* argv[]) {
+    auto start = std::chrono::high_resolution_clock::now();
     //T = mississippi
     //string bwt = "ipssmpissii";
     //string p = "issi";
@@ -202,30 +298,47 @@ int main(int argc, char* argv[]) {
     //small1 = [1]ban[2]banana[3]band[4]bandage[5]bin[6]bind[7]binding
 //    string bwt = "[[[[[[[gnadend1234567ndbnbbb]]]]]]]nnnngnabbbdaiaaaiaii";
 //    string bwt;
-    string p = "in";
+    string p = argv[2];
     map<char, int> counter;
     filename = argv[1];
     fd = fopen(filename, "r");
 
+    string output = filename;
+    fout.open(output + "-bwt", ios::out);
     readBWT(counter);
     set<int> ids;
     buildCTable(counter);
 
 //    printCTable(cTable);
 //    printOccTable(occTable);
-    pair<int, int> res = backwardSearch(p);
-    if (res.first != -1) {
-        int start = res.first;
-        int end = res.second;
+    outputCounter(counter, filename);
+//    outputCTable(cTable, filename);
+//    outputOccTable(occTable, filename);
+
+    pair<int, int> range = backwardSearch(p);
+    map<int, string> res;
+    if (range.first != -1) {
+        int start = range.first;
+        int end = range.second;
         cout << "hit: " << +end - start + 1 << "\n";
         while (start <= end) {
-            reverseBWT(start, ids);
+            reverseBWT(start, end, ids, res);
             start++;
+        }
+        for (auto it: res) {
+            cout << it.second << endl;
         }
     } else {
         cout << "hit: 0\n";
     }
     fclose(fd);
+
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+
+    std::cout << "Time taken by function: "
+              << duration.count() << " microseconds" << std::endl;
+    fout.close();
     return 0;
 }
 
