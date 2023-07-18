@@ -7,3 +7,5 @@
 /files/large2.txt
 /cmake-build-debug/
 /.idea/
+/files/small*.rlb-*
+/files/medium*.rlb-*

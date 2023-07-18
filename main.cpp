@@ -26,9 +26,9 @@ FILE* fd;
 //global
 vector<map<char, int>> occTable;
 map<char, int> cTable;
-int recordNum;
+int recordNum=0;
 int N = 0;
-int byteIndex;
+int byteIndex=0;
 ofstream fout;
 char* filename;
 map<int, int> mPosition;
@@ -132,12 +132,8 @@ void buildOccTable(string str, map<char, int> &counter) {
         }
         counter[str[i]]++;
         occTable.push_back(counter);
-        if(N==4934) {
-            cout << "he";
-        }
+        mPosition[N] = byteIndex;
         N++;
-//        occTable.push_back(counter);
-        mPosition[N + i] = byteIndex;
     }
 }
 
@@ -191,7 +187,7 @@ void handleString(vector<unsigned char> &chars, map<char, int> &counter) {
         res = string(len + 3, c);
     }
     string output = filename;
-    fout << res;
+//    fout << res;
 
     buildOccTable(res, counter);
     byteIndex += chars.size();
@@ -210,9 +206,6 @@ void readBWT(map<char, int> &counter) {
     while (size_t bytesRead = fread(buffer.data(), 1, bufferSize, fd)) {
         for (size_t i = 0; i < bytesRead; ++i) {
             totalBytesRead++;
-            if(totalBytesRead==4934) {
-                cout << "ss";
-            }
             curr = buffer[i];
             if (isChar(curr)) {
                 handleString(chars, counter);
@@ -223,6 +216,7 @@ void readBWT(map<char, int> &counter) {
             }
         }
     }
+    cout << "totalBytesRead" << totalBytesRead << endl;
     handleString(chars, counter);
 }
 
@@ -262,29 +256,40 @@ void outputCTable(map<char, int> &cTable, string filename) {
     file.close();  // closing the file after writing to it
 }
 
+void outputMPosition(map<int, int> &mPosition, string filename) {
+    ofstream file(filename + "-position");
+
+    file << "----mPosition----\n";
+    for (const auto &pair: mPosition) {
+        file << pair.first << ": " << pair.second << endl;
+    }
+
+    file.close();  // closing the file after writing to it
+}
+
 void outputOccTable(vector<map<char, int>> &occTable, string filename) {
     ofstream file(filename + "-occ");
     file << "----occTable-----\n";
     int n = occTable.size();
     file << setw(8) << "\\";
     for (auto it: occTable[n - 1]) {
-        file << setw(5) << it.first;
+        file << setw(8) << it.first;
     }
     file << endl;
     for (int i = 0; i < occTable.size(); i++) {
         file << setw(8) << i;
         for (auto it: occTable[n - 1]) {
             if (occTable[i].count(it.first)) {
-                file << setw(5) << occTable[i][it.first];
+                file << setw(8) << occTable[i][it.first];
             } else {
-                file << setw(5) << occTable[i][it.first];
+                file << setw(8) << occTable[i][it.first];
             }
         }
         file << '\n';
     }
     file << setw(8) << "\\";
     for (auto it: occTable[n - 1]) {
-        file << setw(5) << it.first;
+        file << setw(8) << it.first;
     }
     file.close();
 }
@@ -313,7 +318,8 @@ int main(int argc, char* argv[]) {
 //    printOccTable(occTable);
     outputCounter(counter, filename);
 //    outputCTable(cTable, filename);
-//    outputOccTable(occTable, filename);
+    outputOccTable(occTable, filename);
+    outputMPosition(mPosition, filename);
 
     pair<int, int> range = backwardSearch(p);
     map<int, string> res;
