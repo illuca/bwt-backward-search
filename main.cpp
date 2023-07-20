@@ -1,10 +1,7 @@
 #include <iostream>
 #include <cstdio>
 #include <map>
-#include <fstream>
-#include <queue>
 #include <bitset>
-
 #include <vector>
 #include <set>
 #include <chrono>
@@ -19,6 +16,12 @@ int Occ(int i, char c);
 
 char bwt(int index);
 
+void readBWT();
+
+void buildOccTable(vector<unsigned char> &chars);
+
+string handleString(vector<unsigned char> &chars);
+
 bool isNum(unsigned char c);
 
 FILE* fd;
@@ -26,13 +29,15 @@ FILE* fd;
 //global
 vector<map<char, int>> occTable;
 map<char, int> cTable;
-int recordNum=0;
+int recordNum = 0;
 int N = 0;
-int byteIndex=0;
-ofstream fout;
+int byteIndex = 0;
 char* filename;
-map<int, int> mPosition;
+vector<pair<int, int>> mPosition;
 set<int> visited;
+map<char, int> counter;
+int gap = 2;
+bool tableBuilt = false;
 
 int C(char c) {
     if (cTable.count(c) == 0) {
@@ -69,7 +74,7 @@ pair<int, int> backwardSearch(string &p) {
 
 void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string> &result) {
     int i = start;
-    int lb, rb;
+    int lb = 0, rb = 0;
     string record;
     if (visited.count(i)) {
         return;
@@ -115,8 +120,9 @@ void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string
         if (start <= i && i <= end) {
             visited.insert(i);
         }
-        half = bwt(i) + half;
-        i = LF(i, bwt(i));
+        char c = bwt(i);
+        half = c + half;
+        i = LF(i, c);
         if (i == start) {
             break;
         }
@@ -125,21 +131,9 @@ void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string
     result[currId] = record;
 }
 
-void buildOccTable(string str, map<char, int> &counter) {
-    for (int i = 0; i < str.size(); i++) {
-        if (str[i] == '[') {
-            recordNum++;
-        }
-        counter[str[i]]++;
-        occTable.push_back(counter);
-        mPosition[N] = byteIndex;
-        N++;
-    }
-}
-
 char bwt(int index) {
     //if after mapping, what we read from the file is a number, then backward util we find the character
-    int ithByte = mPosition[index];
+    int ithByte = mPosition[index].first;
     //the max needs 4 bytes
     int num = 5;
     // 1st byte is 0
@@ -150,7 +144,6 @@ char bwt(int index) {
         num = ithByte + 1;
     }
     unsigned char buffer[num];
-    char correct = "[[[[[[[gnadend1234567ndbnbbb]]]]]]]nnnngnabbbdaiaaaiaii"[index];
 
     if (fread(buffer, 1, num, fd) != num) {
         printf("Failed to read bytes at position %d and %d\n", ithByte - 1, ithByte);
@@ -164,19 +157,73 @@ char bwt(int index) {
     return '#';
 }
 
-void handleString(vector<unsigned char> &chars, map<char, int> &counter) {
+int Occ(int i, char c) {
+    int checkpoint = i / gap;
+    int offset = i % gap;
+    if (offset == 0) {
+        return occTable[checkpoint][c];
+    } else {
+        int bwtI = checkpoint * gap;
+        int rlbI = mPosition[bwtI].first;
+        //TODO 优化成从-5开始读, 这样就不用在下面调用bwt(rlbI)
+        char prev = bwt(bwtI);
+
+        //mPosition[bwtI] has been recorded
+        fseek(fd, rlbI + 1, SEEK_SET);
+        int bufferSize = offset + 10;
+        vector<unsigned char> buffer(bufferSize);
+        unsigned char curr;
+        vector<unsigned char> chars;
+
+        int numC = 0;
+        string str = "";
+        size_t bytesRead = fread(buffer.data(), 1, bufferSize, fd);
+        for (size_t i = 0; i < bytesRead; i++) {
+            curr = buffer[i];
+            if (isChar(curr)) {
+                str += handleString(chars);
+                chars.clear();
+                chars.push_back(curr);
+            } else {
+                if (chars.empty()) {
+                    chars.push_back(prev);
+                    chars.push_back(curr);
+                } else {
+                    chars.push_back(curr);
+                }
+            }
+        }
+        str += handleString(chars);
+
+        int duplicate = mPosition[bwtI].second;
+        if (isNum(buffer[0])) {
+            //bwtI, real_bwtI, i
+            // start from bwtI+1 to i-bwtI
+            //start with bwtI-duplicate, bwtI, i
+            if (prev == c) {
+                numC = count(str.begin() + duplicate + 1, str.begin() + i - (bwtI - duplicate) + 1, c);
+            } else {
+                numC = count(str.begin() + duplicate + 1, str.begin() + i - (bwtI - duplicate) + 1, c);
+            }
+        } else {
+            //start with bwtI-duplicate, bwtI
+            numC = count(str.begin(), str.begin() + i - bwtI, c);
+        }
+        return occTable[checkpoint][c] + numC;
+    }
+}
+
+string handleString(vector<unsigned char> &chars) {
     bitset<28> b;
     string res;
-    if (chars.size()==0) {
-        return;
-    }
-    if(chars.size()==1) {
+    if (chars.empty()) {
+        return "";
+    } else if (chars.size() == 1) {
         res = string(1, chars[0]);
-    }
-    if (chars.size() >= 2) {
+    } else {
+        // chars.size() >= 2
         unsigned char c = chars[0];
         // For each byte, extract the least significant 7 bits and append them to our bitset
-
         for (int i = 1; i < chars.size(); ++i) {
             unsigned char byte = chars[i];
             for (int j = 0; j < 7; ++j) {
@@ -186,45 +233,33 @@ void handleString(vector<unsigned char> &chars, map<char, int> &counter) {
         unsigned int len = b.to_ulong();
         res = string(len + 3, c);
     }
-    string output = filename;
-//    fout << res;
+    return res;
+}
 
-    buildOccTable(res, counter);
+void doBuildOccTable(string &str) {
+    for (int i = 0; i < str.size(); i++) {
+        if (str[i] == '[') {
+            recordNum++;
+        }
+        N++;
+        counter[str[i]]++;
+        //TODO 取余可能要优化
+        //TODO mPosition也需要gap, 可以给counter加一个, 这样occTable就包含了mPosition
+        mPosition.emplace_back(byteIndex, i);
+        if ((N - 1) % gap == 0) {
+            occTable.push_back(counter);
+        }
+    }
+}
+
+void buildOccTable(vector<unsigned char> &chars) {
+    string str = handleString(chars);
+    // do buildOccTable
+    doBuildOccTable(str);
     byteIndex += chars.size();
 }
 
-void readBWT(map<char, int> &counter) {
-    const size_t bufferSize = 1024;
-    vector<unsigned char> buffer(bufferSize);
-    char curr, prev;
-
-    //TODO 可能需要提前分配内存效率更高
-    vector<unsigned char> chars;
-
-    string str;
-    int totalBytesRead = 0;
-    while (size_t bytesRead = fread(buffer.data(), 1, bufferSize, fd)) {
-        for (size_t i = 0; i < bytesRead; ++i) {
-            totalBytesRead++;
-            curr = buffer[i];
-            if (isChar(curr)) {
-                handleString(chars, counter);
-                chars.clear();
-                chars.push_back(curr);
-            }else {
-                chars.push_back(curr);
-            }
-        }
-    }
-    cout << "totalBytesRead" << totalBytesRead << endl;
-    handleString(chars, counter);
-}
-
-int Occ(int i, char c) {
-    return occTable[i][c];
-}
-
-void buildCTable(const map<char, int> &counter) {
+void buildCTable() {
     int total = 0;
     for (auto it: counter) {
         //value of current key = total sum of values up to previous key
@@ -234,92 +269,36 @@ void buildCTable(const map<char, int> &counter) {
     }
 }
 
-void outputCounter(map<char, int> &counter, string filename) {
-    ofstream file(filename + "-counter");
-
-    file << "----cTable----\n";
-    for (const auto &pair: counter) {
-        file << pair.first << ": " << pair.second << endl;
-    }
-
-    file.close();  // closing the file after writing to it
-}
-
-void outputCTable(map<char, int> &cTable, string filename) {
-    ofstream file(filename + "-c");
-
-    file << "----cTable----\n";
-    for (const auto &pair: cTable) {
-        file << pair.first << ": " << pair.second << endl;
-    }
-
-    file.close();  // closing the file after writing to it
-}
-
-void outputMPosition(map<int, int> &mPosition, string filename) {
-    ofstream file(filename + "-position");
-
-    file << "----mPosition----\n";
-    for (const auto &pair: mPosition) {
-        file << pair.first << ": " << pair.second << endl;
-    }
-
-    file.close();  // closing the file after writing to it
-}
-
-void outputOccTable(vector<map<char, int>> &occTable, string filename) {
-    ofstream file(filename + "-occ");
-    file << "----occTable-----\n";
-    int n = occTable.size();
-    file << setw(8) << "\\";
-    for (auto it: occTable[n - 1]) {
-        file << setw(8) << it.first;
-    }
-    file << endl;
-    for (int i = 0; i < occTable.size(); i++) {
-        file << setw(8) << i;
-        for (auto it: occTable[n - 1]) {
-            if (occTable[i].count(it.first)) {
-                file << setw(8) << occTable[i][it.first];
+void readBWT() {
+    const size_t bufferSize = 2048;
+    vector<unsigned char> buffer(bufferSize);
+    //TODO 可能需要提前分配内存效率更高
+    char curr;
+    vector<unsigned char> chars;
+    while (size_t bytesRead = fread(buffer.data(), 1, bufferSize, fd)) {
+        for (size_t i = 0; i < bytesRead; ++i) {
+            curr = buffer[i];
+            if (isChar(curr)) {
+                buildOccTable(chars);
+                chars.clear();
+                chars.push_back(curr);
             } else {
-                file << setw(8) << occTable[i][it.first];
+                chars.push_back(curr);
             }
         }
-        file << '\n';
     }
-    file << setw(8) << "\\";
-    for (auto it: occTable[n - 1]) {
-        file << setw(8) << it.first;
-    }
-    file.close();
+    buildOccTable(chars);
 }
 
 int main(int argc, char* argv[]) {
-    auto start = std::chrono::high_resolution_clock::now();
-    //T = mississippi
-    //string bwt = "ipssmpissii";
-    //string p = "issi";
-
-    //small1 = [1]ban[2]banana[3]band[4]bandage[5]bin[6]bind[7]binding
-//    string bwt = "[[[[[[[gnadend1234567ndbnbbb]]]]]]]nnnngnabbbdaiaaaiaii";
-//    string bwt;
-    string p = argv[2];
-    map<char, int> counter;
+    string p = argv[3];
+    string idxFile = argv[2];
     filename = argv[1];
     fd = fopen(filename, "r");
-
-    string output = filename;
-    fout.open(output + "-bwt", ios::out);
-    readBWT(counter);
+    readBWT();
     set<int> ids;
-    buildCTable(counter);
-
-//    printCTable(cTable);
-//    printOccTable(occTable);
-    outputCounter(counter, filename);
-//    outputCTable(cTable, filename);
-    outputOccTable(occTable, filename);
-    outputMPosition(mPosition, filename);
+    buildCTable();
+//    counter.clear();
 
     pair<int, int> range = backwardSearch(p);
     map<int, string> res;
@@ -338,13 +317,5 @@ int main(int argc, char* argv[]) {
         cout << "hit: 0\n";
     }
     fclose(fd);
-
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-
-    std::cout << "Time taken by function: "
-              << duration.count() << " microseconds" << std::endl;
-    fout.close();
     return 0;
 }
-

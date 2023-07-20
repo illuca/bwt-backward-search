@@ -2,11 +2,10 @@
 // Created by luca on 16/7/2023.
 //
 #include <iostream>
-#include <cstdio>
 #include <map>
 #include <vector>
+#include <iomanip>
 #include <fstream>
-#include <set>
 
 using namespace std;
 
@@ -61,6 +60,66 @@ void printOccTable(vector<map<char, int>> &occTable) {
     cout << endl;
 }
 
+
+void outputCounter(map<char, int> &counter, string filename) {
+    ofstream file(filename + "-counter");
+
+    file << "----cTable----\n";
+    for (const auto &pair: counter) {
+        file << pair.first << ": " << pair.second << endl;
+    }
+
+    file.close();  // closing the file after writing to it
+}
+
+void outputCTable(map<char, int> &cTable, string filename) {
+    ofstream file(filename + "-c");
+
+    file << "----cTable----\n";
+    for (const auto &pair: cTable) {
+        file << pair.first << ": " << pair.second << endl;
+    }
+
+    file.close();  // closing the file after writing to it
+}
+
+void outputMPosition(map<int, int> &mPosition, string filename) {
+    ofstream file(filename + "-position");
+
+    file << "----mPosition----\n";
+    for (const auto &pair: mPosition) {
+        file << pair.first << ": " << pair.second << endl;
+    }
+
+    file.close();  // closing the file after writing to it
+}
+
+void outputOccTable(vector<map<char, int>> &occTable, string filename) {
+    ofstream file(filename + "-occ");
+    file << "----occTable-----\n";
+    int n = occTable.size();
+    file << setw(8) << "\\";
+    for (auto it: occTable[n - 1]) {
+        file << setw(8) << it.first;
+    }
+    file << endl;
+    for (int i = 0; i < occTable.size(); i++) {
+        file << setw(8) << i;
+        for (auto it: occTable[n - 1]) {
+            if (occTable[i].count(it.first)) {
+                file << setw(8) << occTable[i][it.first];
+            } else {
+                file << setw(8) << occTable[i][it.first];
+            }
+        }
+        file << '\n';
+    }
+    file << setw(8) << "\\";
+    for (auto it: occTable[n - 1]) {
+        file << setw(8) << it.first;
+    }
+    file.close();
+}
 
 
 
