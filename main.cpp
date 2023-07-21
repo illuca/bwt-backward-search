@@ -14,13 +14,13 @@ FILE* openRLB();
 
 int Occ(int i, char c);
 
-char bwt(int index);
+char bwt(int i);
 
 void readBWT();
 
 void buildOccTable(vector<unsigned char> &chars);
 
-string handleString(vector<unsigned char> &chars);
+string handleString(vector<unsigned char> &chars, int pos);
 
 bool isNum(unsigned char c);
 
@@ -33,7 +33,7 @@ int recordNum = 0;
 int N = 0;
 int byteIndex = 0;
 char* filename;
-vector<pair<int, int>> mPosition;
+vector<pair<int, int>> rlbPosition;
 set<int> visited;
 map<char, int> counter;
 int gap = 2;
@@ -131,9 +131,8 @@ void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string
     result[currId] = record;
 }
 
-char bwt(int index) {
-    //if after mapping, what we read from the file is a number, then backward util we find the character
-    int ithByte = mPosition[index].first;
+char bwt0(int checkpoint) {
+    int ithByte = rlbPosition[checkpoint].first;
     //the max needs 4 bytes
     int num = 5;
     // 1st byte is 0
@@ -144,17 +143,36 @@ char bwt(int index) {
         num = ithByte + 1;
     }
     unsigned char buffer[num];
-
-    if (fread(buffer, 1, num, fd) != num) {
-        printf("Failed to read bytes at position %d and %d\n", ithByte - 1, ithByte);
-        return 1;
-    }
-    for (int i = num - 1; i >= 0; i--) {
-        if (isChar(buffer[i])) {
-            return buffer[i];
+    fread(buffer, 1, num, fd);
+    for (int x = num - 1; x >= 0; x--) {
+        if (isChar(buffer[x])) {
+            return buffer[x];
         }
     }
-    return '#';
+}
+
+int getBwtI(int checkpoint) {
+    return rlbPosition[checkpoint].first + rlbPosition[checkpoint].second;
+}
+
+string readGap(int i, int j) {
+
+    return "";
+}
+
+char bwt(int i) {
+    int checkpoint = i / gap;
+    if (i % gap == 0) {
+        return bwt0(checkpoint);
+    } else {
+        int bwtI = getBwtI(checkpoint);
+        string bwt = readGap(bwtI, i);
+        return bwt[i - bwtI];
+    }
+}
+
+int OCC(int i, char c) {
+
 }
 
 int Occ(int i, char c) {
@@ -164,11 +182,12 @@ int Occ(int i, char c) {
         return occTable[checkpoint][c];
     } else {
         int bwtI = checkpoint * gap;
-        int rlbI = mPosition[bwtI].first;
+        int rlbI = rlbPosition[checkpoint].first;
+        size_t bytes = 0;
         //TODO 优化成从-5开始读, 这样就不用在下面调用bwt(rlbI)
         char prev = bwt(bwtI);
 
-        //mPosition[bwtI] has been recorded
+        //rlbPosition[bwtI] has been recorded
         fseek(fd, rlbI + 1, SEEK_SET);
         int bufferSize = offset + 10;
         vector<unsigned char> buffer(bufferSize);
@@ -181,7 +200,7 @@ int Occ(int i, char c) {
         for (size_t i = 0; i < bytesRead; i++) {
             curr = buffer[i];
             if (isChar(curr)) {
-                str += handleString(chars);
+                str += handleString(chars, 0);
                 chars.clear();
                 chars.push_back(curr);
             } else {
@@ -193,9 +212,8 @@ int Occ(int i, char c) {
                 }
             }
         }
-        str += handleString(chars);
-
-        int duplicate = mPosition[bwtI].second;
+        str += handleString(chars, 0);
+        int duplicate = rlbPosition[checkpoint].second;
         if (isNum(buffer[0])) {
             //bwtI, real_bwtI, i
             // start from bwtI+1 to i-bwtI
@@ -213,7 +231,28 @@ int Occ(int i, char c) {
     }
 }
 
-string handleString(vector<unsigned char> &chars) {
+pair<char, int> charAndLength(vector<unsigned char> &chars) {
+    bitset<28> b;
+    string res;
+    if (chars.size() == 1) {
+        return {chars[0], 1};
+    }
+
+    // chars.size() >= 2
+    unsigned char c = chars[0];
+    // For each byte, extract the least significant 7 bits and append them to our bitset
+    for (int i = 1; i < chars.size(); ++i) {
+        unsigned char byte = chars[i];
+        for (int j = 0; j < 7; ++j) {
+            b[(i - 1) * 7 + j] = (byte >> j) & 1;
+        }
+    }
+    unsigned int len = b.to_ulong();
+    len = len + 3;
+    return {c, len};
+}
+
+string handleString(vector<unsigned char> &chars, int pos) {
     bitset<28> b;
     string res;
     if (chars.empty()) {
@@ -231,7 +270,8 @@ string handleString(vector<unsigned char> &chars) {
             }
         }
         unsigned int len = b.to_ulong();
-        res = string(len + 3, c);
+        len = len - pos + 3;
+        res = string(len, c);
     }
     return res;
 }
@@ -245,15 +285,15 @@ void doBuildOccTable(string &str) {
         counter[str[i]]++;
         //TODO 取余可能要优化
         //TODO mPosition也需要gap, 可以给counter加一个, 这样occTable就包含了mPosition
-        mPosition.emplace_back(byteIndex, i);
         if ((N - 1) % gap == 0) {
+            rlbPosition.emplace_back(byteIndex, i);
             occTable.push_back(counter);
         }
     }
 }
 
 void buildOccTable(vector<unsigned char> &chars) {
-    string str = handleString(chars);
+    string str = handleString(chars, 0);
     // do buildOccTable
     doBuildOccTable(str);
     byteIndex += chars.size();
@@ -267,6 +307,30 @@ void buildCTable() {
         cTable[c] = total;
         total += it.second;
     }
+}
+
+void buildOCCTable() {
+    const size_t bufferSize = 2048;
+    unsigned char buffer[bufferSize];
+    char curr;
+    vector<unsigned char> chars;
+    while (size_t bytesRead = fread(buffer, 1, bufferSize, fd)) {
+        for (size_t i = 0; i < bytesRead; ++i) {
+            curr = buffer[i];
+            if (isChar(curr)) {
+                if (chars.empty()) {
+                    chars.push_back(curr);
+                } else {
+                    pair<char, int> rle = charAndLength(chars);
+
+                }
+            } else {
+                chars.push_back(curr);
+            }
+        }
+    }
+    buildOccTable(chars);
+
 }
 
 void readBWT() {
@@ -305,7 +369,7 @@ int main(int argc, char* argv[]) {
     if (range.first != -1) {
         int start = range.first;
         int end = range.second;
-        cout << "hit: " << +end - start + 1 << "\n";
+//        cout << "hit: " << +end - start + 1 << "\n";
         while (start <= end) {
             reverseBWT(start, end, ids, res);
             start++;
@@ -314,7 +378,7 @@ int main(int argc, char* argv[]) {
             cout << it.second << endl;
         }
     } else {
-        cout << "hit: 0\n";
+//        cout << "hit: 0\n";
     }
     fclose(fd);
     return 0;

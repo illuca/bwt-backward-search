@@ -86,7 +86,7 @@ void outputCTable(map<char, int> &cTable, string filename) {
 void outputMPosition(map<int, int> &mPosition, string filename) {
     ofstream file(filename + "-position");
 
-    file << "----mPosition----\n";
+    file << "----rlbPosition----\n";
     for (const auto &pair: mPosition) {
         file << pair.first << ": " << pair.second << endl;
     }

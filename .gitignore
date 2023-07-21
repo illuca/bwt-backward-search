@@ -1,11 +1,11 @@
 /CMakeLists.txt
 /files/large1.bwt
-/files/large1.rlb
+/files/large1.rlbPosition
 /files/large1.txt
 /files/large2.bwt
-/files/large2.rlb
+/files/large2.rlbPosition
 /files/large2.txt
 /cmake-build-debug/
 /.idea/
-/files/small*.rlb-*
-/files/medium*.rlb-*
+/files/small*.rlbPosition-*
+/files/medium*.rlbPosition-*

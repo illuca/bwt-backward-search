@@ -29,12 +29,12 @@ make
 
 Then you can do something like:
 
-./sample1 abcde.rlb
+./sample1 abcde.rlbPosition
 
-./sample1 a20k.rlb
+./sample1 a20k.rlbPosition
 
 The program only works for single-byte counts for now. But if you observe the multi-byte count 
-files (such as a20k.rlb), it is not hard for you to figure and extend it to multi-byte counts.
+files (such as a20k.rlbPosition), it is not hard for you to figure and extend it to multi-byte counts.
 
 Good luck!
 
