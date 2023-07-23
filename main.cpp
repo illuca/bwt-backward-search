@@ -1,70 +1,82 @@
-#include <iostream>
-#include <cstdio>
 #include <map>
 #include <bitset>
 #include <vector>
 #include <set>
-#include <chrono>
-#include "helper.h"
-
+#include <string>
+//#include "helper.h"
 using namespace std;
-
 //func
-FILE* openRLB();
-
 int Occ(int i, char c);
 
-char bwt(int i);
+char bwt(int &i);
 
-void readBWT();
+void buildOccTable();
 
-void buildOccTable(vector<unsigned char> &chars);
+typedef struct {
+    unsigned char c;
+    int length;
+    int byte;
+} RLE;
 
-string handleString(vector<unsigned char> &chars, int pos);
+vector<RLE> handleRLE(vector<unsigned char> &buffer, size_t &bytesRead, vector<unsigned char> &chars);
 
-bool isNum(unsigned char c);
+pair<unsigned char, int> charAndLength(vector<unsigned char> &chars);
 
-FILE* fd;
+bool isNum(unsigned char &c);
+
+void doBuildOccTable(RLE &rle);
+
+RLE clearChars(vector<unsigned char> &chars);
+
+FILE* FD;
+
+typedef struct {
+    int idx;
+    int pos;
+    unsigned char c;
+} INFO;
 
 //global
 vector<map<char, int>> occTable;
 map<char, int> cTable;
-int recordNum = 0;
-int N = 0;
-int byteIndex = 0;
-char* filename;
-vector<pair<int, int>> rlbPosition;
-set<int> visited;
-map<char, int> counter;
-int gap = 2;
-bool tableBuilt = false;
+int RECORD_NUM = 0;
+int BWT_NUM = 0;
+int RLB_SIZE = 0;
+int RLB_INDEX = 0;
+char* FILENAME;
+vector<INFO> rlbPosition;
+set<int> VISITED;
+map<char, int> COUNTER;
 
-int C(char c) {
+int GAP = 0;
+
+int C(char &c) {
     if (cTable.count(c) == 0) {
         return -1;
     }
     return cTable.at(c);
 }
 
-bool isChar(unsigned char c) {
+bool isChar(unsigned char &c) {
     return !isNum(c);
 }
 
-bool isNum(unsigned char c) {
+bool isNum(unsigned char &c) {
     return c >> 7 == 1;
 }
 
-int LF(int i, char c) {
+int LF(int &i, char &c) {
     return cTable.at(c) + Occ(i, c) - 1;
 }
 
 pair<int, int> backwardSearch(string &p) {
     int start = 0;
-    int end = N - 1;
+    int end = BWT_NUM - 1;
     for (int i = p.size() - 1; i >= 0; i--) {
         char c = p[i];
-        start = C(c) + (start > 0 ? Occ(start - 1, c) : 0);
-        end = C(c) + Occ(end, c) - 1;
+        int s = C(c);
+        start = s + (start > 0 ? Occ(start - 1, c) : 0);
+        end = s + Occ(end, c) - 1;
         if (start > end) {
             return {-1, -1};
         }
@@ -76,12 +88,12 @@ void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string
     int i = start;
     int lb = 0, rb = 0;
     string record;
-    if (visited.count(i)) {
+    if (VISITED.count(i)) {
         return;
     }
     while (true) {
         if (start <= i && i <= end) {
-            visited.insert(i);
+            VISITED.insert(i);
         }
         char c = bwt(i);
         record = c + record;
@@ -110,7 +122,7 @@ void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string
     string half;
     if (range.first == -1) {
         //it is the last record
-        int firstId = currId - recordNum + 1;
+        int firstId = currId - RECORD_NUM + 1;
         string firstIdentifier = "[" + to_string(firstId) + "]";
         //find the first record
         range = backwardSearch(firstIdentifier);
@@ -118,7 +130,7 @@ void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string
     i = range.first;
     while (true) {
         if (start <= i && i <= end) {
-            visited.insert(i);
+            VISITED.insert(i);
         }
         char c = bwt(i);
         half = c + half;
@@ -131,113 +143,93 @@ void reverseBWT(const int &start, const int &end, set<int> &ids, map<int, string
     result[currId] = record;
 }
 
-char bwt0(int checkpoint) {
-    int ithByte = rlbPosition[checkpoint].first;
-    //the max needs 4 bytes
-    int num = 5;
-    // 1st byte is 0
-    if (ithByte >= 4) {
-        fseek(fd, ithByte - 4, SEEK_SET);
+char bwt0(int &checkpoint) {
+    return rlbPosition[checkpoint].c;
+}
+
+string readGap(int &i) {
+    int checkpoint = i / GAP;
+    int start = checkpoint * GAP;
+    int total = 0, rlbi = 0, rlbj = 0;
+    int pos = rlbPosition[checkpoint].pos;
+    rlbi = rlbPosition[checkpoint].idx;
+
+    if (checkpoint + 1 < rlbPosition.size()) {
+        total = GAP + 1;
+        rlbj = rlbPosition[checkpoint + 1].idx;
     } else {
-        fseek(fd, 0, SEEK_SET);
-        num = ithByte + 1;
+        total = i - start + 1;
+        rlbj = RLB_SIZE;
     }
-    unsigned char buffer[num];
-    fread(buffer, 1, num, fd);
-    for (int x = num - 1; x >= 0; x--) {
-        if (isChar(buffer[x])) {
-            return buffer[x];
+    string str = "";
+    if (rlbi == rlbj) {
+        return string(GAP + 1, bwt0(checkpoint));
+    }
+
+    fseek(FD, rlbi, SEEK_SET);
+    int bufferSize = GAP + 10;
+    vector<unsigned char> buffer(bufferSize);
+    size_t bytesRead = fread(buffer.data(), 1, bufferSize, FD);
+
+    vector<unsigned char> chars;
+    vector<RLE> rleArr = handleRLE(buffer, bytesRead, chars);
+    rleArr.push_back(clearChars(chars));
+    for (auto rle: rleArr) {
+        int len = str.empty() ? rle.length - pos : rle.length;
+        if (str.size() + len >= total) {
+            return str + string(total - str.size(), rle.c);
         }
+        str += string(len, rle.c);
     }
+    return str;
 }
 
-int getBwtI(int checkpoint) {
-    return rlbPosition[checkpoint].first + rlbPosition[checkpoint].second;
+RLE clearChars(vector<unsigned char> &chars) {
+    pair<unsigned char, int> p = charAndLength(chars);
+    RLE rle{p.first, p.second, (int) chars.size()};
+    chars.clear();
+    return rle;
 }
 
-string readGap(int i, int j) {
-
-    return "";
-}
-
-char bwt(int i) {
-    int checkpoint = i / gap;
-    if (i % gap == 0) {
+char bwt(int &i) {
+    int checkpoint = i / GAP;
+    if (i % GAP == 0) {
         return bwt0(checkpoint);
     } else {
-        int bwtI = getBwtI(checkpoint);
-        string bwt = readGap(bwtI, i);
-        return bwt[i - bwtI];
+        string bwt = readGap(i);
+        int start = checkpoint * GAP;
+        return bwt[i - start];
     }
 }
 
-int OCC(int i, char c) {
-
+int countOccurrences(const string &str, char &c) {
+    int count = 0;
+    for (int i = 1; i < str.size(); ++i) {
+        if (str[i] == c) {
+            count++;
+        }
+    }
+    return count;
 }
 
 int Occ(int i, char c) {
-    int checkpoint = i / gap;
-    int offset = i % gap;
-    if (offset == 0) {
+    int checkpoint = i / GAP;
+    if (i % GAP == 0) {
         return occTable[checkpoint][c];
     } else {
-        int bwtI = checkpoint * gap;
-        int rlbI = rlbPosition[checkpoint].first;
-        size_t bytes = 0;
-        //TODO 优化成从-5开始读, 这样就不用在下面调用bwt(rlbI)
-        char prev = bwt(bwtI);
-
-        //rlbPosition[bwtI] has been recorded
-        fseek(fd, rlbI + 1, SEEK_SET);
-        int bufferSize = offset + 10;
-        vector<unsigned char> buffer(bufferSize);
-        unsigned char curr;
-        vector<unsigned char> chars;
-
-        int numC = 0;
-        string str = "";
-        size_t bytesRead = fread(buffer.data(), 1, bufferSize, fd);
-        for (size_t i = 0; i < bytesRead; i++) {
-            curr = buffer[i];
-            if (isChar(curr)) {
-                str += handleString(chars, 0);
-                chars.clear();
-                chars.push_back(curr);
-            } else {
-                if (chars.empty()) {
-                    chars.push_back(prev);
-                    chars.push_back(curr);
-                } else {
-                    chars.push_back(curr);
-                }
-            }
-        }
-        str += handleString(chars, 0);
-        int duplicate = rlbPosition[checkpoint].second;
-        if (isNum(buffer[0])) {
-            //bwtI, real_bwtI, i
-            // start from bwtI+1 to i-bwtI
-            //start with bwtI-duplicate, bwtI, i
-            if (prev == c) {
-                numC = count(str.begin() + duplicate + 1, str.begin() + i - (bwtI - duplicate) + 1, c);
-            } else {
-                numC = count(str.begin() + duplicate + 1, str.begin() + i - (bwtI - duplicate) + 1, c);
-            }
-        } else {
-            //start with bwtI-duplicate, bwtI
-            numC = count(str.begin(), str.begin() + i - bwtI, c);
-        }
+        int start = checkpoint * GAP;
+        string bwt = readGap(i).substr(0, i - start + 1);
+        int numC = countOccurrences(bwt, c);
         return occTable[checkpoint][c] + numC;
     }
 }
 
-pair<char, int> charAndLength(vector<unsigned char> &chars) {
+pair<unsigned char, int> charAndLength(vector<unsigned char> &chars) {
     bitset<28> b;
     string res;
     if (chars.size() == 1) {
         return {chars[0], 1};
     }
-
     // chars.size() >= 2
     unsigned char c = chars[0];
     // For each byte, extract the least significant 7 bits and append them to our bitset
@@ -252,56 +244,56 @@ pair<char, int> charAndLength(vector<unsigned char> &chars) {
     return {c, len};
 }
 
-string handleString(vector<unsigned char> &chars, int pos) {
-    bitset<28> b;
-    string res;
-    if (chars.empty()) {
-        return "";
-    } else if (chars.size() == 1) {
-        res = string(1, chars[0]);
-    } else {
-        // chars.size() >= 2
-        unsigned char c = chars[0];
-        // For each byte, extract the least significant 7 bits and append them to our bitset
-        for (int i = 1; i < chars.size(); ++i) {
-            unsigned char byte = chars[i];
-            for (int j = 0; j < 7; ++j) {
-                b[(i - 1) * 7 + j] = (byte >> j) & 1;
-            }
+void doBuildOccTable(RLE &rle) {
+    if (rle.c == '[') {
+        RECORD_NUM += rle.length;
+    }
+    for (int i = 0; i < rle.length; i++) {
+        BWT_NUM++;
+        COUNTER[rle.c]++;
+        if ((BWT_NUM - 1) % GAP == 0) {
+            rlbPosition.push_back({RLB_INDEX, i, rle.c});
+            occTable.push_back(COUNTER);
         }
-        unsigned int len = b.to_ulong();
-        len = len - pos + 3;
-        res = string(len, c);
+    }
+//    int curr = BWT_NUM / GAP;
+//    int maxm = (BWT_NUM + rle.length - 1) / GAP;
+//    for (; curr < maxm; ++curr) {
+//        int pos = (curr + 1) * GAP + 1 - BWT_NUM;
+//        COUNTER[rle.c] += pos;
+//        occTable.push_back(COUNTER);
+//        rlbPosition.push_back({RLB_INDEX, pos, rle.c});
+//    }
+
+    RLB_INDEX += rle.byte;
+}
+
+
+vector<RLE> handleRLE(vector<unsigned char> &buffer, size_t &bytesRead, vector<unsigned char> &chars) {
+    unsigned char curr;
+    vector<RLE> res;
+
+    for (int i = 0; i < bytesRead; i++) {
+        curr = buffer[i];
+        if (isChar(curr)) {
+
+            if (chars.empty()) {
+                chars.push_back(curr);
+            } else {
+                res.push_back(clearChars(chars));
+                chars.push_back(curr);
+            }
+
+        } else {
+            chars.push_back(curr);
+        }
     }
     return res;
 }
 
-void doBuildOccTable(string &str) {
-    for (int i = 0; i < str.size(); i++) {
-        if (str[i] == '[') {
-            recordNum++;
-        }
-        N++;
-        counter[str[i]]++;
-        //TODO 取余可能要优化
-        //TODO mPosition也需要gap, 可以给counter加一个, 这样occTable就包含了mPosition
-        if ((N - 1) % gap == 0) {
-            rlbPosition.emplace_back(byteIndex, i);
-            occTable.push_back(counter);
-        }
-    }
-}
-
-void buildOccTable(vector<unsigned char> &chars) {
-    string str = handleString(chars, 0);
-    // do buildOccTable
-    doBuildOccTable(str);
-    byteIndex += chars.size();
-}
-
 void buildCTable() {
     int total = 0;
-    for (auto it: counter) {
+    for (auto it: COUNTER) {
         //value of current key = total sum of values up to previous key
         char c = it.first;
         cTable[c] = total;
@@ -309,60 +301,50 @@ void buildCTable() {
     }
 }
 
-void buildOCCTable() {
-    const size_t bufferSize = 2048;
-    unsigned char buffer[bufferSize];
-    char curr;
-    vector<unsigned char> chars;
-    while (size_t bytesRead = fread(buffer, 1, bufferSize, fd)) {
-        for (size_t i = 0; i < bytesRead; ++i) {
-            curr = buffer[i];
-            if (isChar(curr)) {
-                if (chars.empty()) {
-                    chars.push_back(curr);
-                } else {
-                    pair<char, int> rle = charAndLength(chars);
-
-                }
-            } else {
-                chars.push_back(curr);
-            }
-        }
-    }
-    buildOccTable(chars);
-
-}
-
-void readBWT() {
+void buildOccTable() {
     const size_t bufferSize = 2048;
     vector<unsigned char> buffer(bufferSize);
-    //TODO 可能需要提前分配内存效率更高
-    char curr;
+    fseek(FD, 0, SEEK_SET);
     vector<unsigned char> chars;
-    while (size_t bytesRead = fread(buffer.data(), 1, bufferSize, fd)) {
-        for (size_t i = 0; i < bytesRead; ++i) {
-            curr = buffer[i];
-            if (isChar(curr)) {
-                buildOccTable(chars);
-                chars.clear();
-                chars.push_back(curr);
-            } else {
-                chars.push_back(curr);
-            }
+    while (size_t bytesRead = fread(buffer.data(), 1, bufferSize, FD)) {
+        vector<RLE> rleArr = handleRLE(buffer, bytesRead, chars);
+        for (auto rle: rleArr) {
+            doBuildOccTable(rle);
         }
     }
-    buildOccTable(chars);
+    if (!chars.empty()) {
+        RLE rle = clearChars(chars);
+        doBuildOccTable(rle);
+    }
+}
+
+void output() {
+//    outputOccTable(occTable, FILENAME);
+//    outputCounter(COUNTER, FILENAME);
+//    outputCTable(cTable, FILENAME);
+}
+
+void getFileSize() {
+    fseek(FD, 0, SEEK_END);
+    RLB_SIZE = ftell(FD);
 }
 
 int main(int argc, char* argv[]) {
     string p = argv[3];
     string idxFile = argv[2];
-    filename = argv[1];
-    fd = fopen(filename, "r");
-    readBWT();
+    FILENAME = argv[1];
+    FD = fopen(FILENAME, "r");
+    getFileSize();
+    if (RLB_SIZE > 4 * 1024 * 1024) {
+        GAP = 9000;
+    } else {
+        GAP = 5000;
+    }
+//
+    buildOccTable();
+
     set<int> ids;
     buildCTable();
-//    counter.clear();
 
     pair<int, int> range = backwardSearch(p);
     map<int, string> res;
@@ -375,11 +357,11 @@ int main(int argc, char* argv[]) {
             start++;
         }
         for (auto it: res) {
-            cout << it.second << endl;
+            printf("%s\n", it.second.c_str());
         }
     } else {
 //        cout << "hit: 0\n";
     }
-    fclose(fd);
+    fclose(FD);
     return 0;
 }

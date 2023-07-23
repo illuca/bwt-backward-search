@@ -1,18 +1,15 @@
 CC=g++
-CFLAGS=-std=c++14 -Wall -g
-OBJS=main.o helper.o
-BINS=main
+CFLAGS=-O3
+OBJS=bwtsearch.o
+BINS=bwtsearch
 
 all: $(BINS)
 
-main: $(OBJS)
-	$(CC) $(CFLAGS) -o main $(OBJS)
+bwtsearch: $(OBJS)
+	$(CC) $(CFLAGS) -o bwtsearch $(OBJS)
 
-main.o: main.cpp helper.h
-	$(CC) $(CFLAGS) -c main.cpp
-
-helper.o: helper.cpp helper.h
-	$(CC) $(CFLAGS) -c helper.cpp
+bwtsearch.o: bwtsearch.cpp
+	$(CC) $(CFLAGS) -c bwtsearch.cpp
 
 clean:
 	rm -f $(BINS) *.o
